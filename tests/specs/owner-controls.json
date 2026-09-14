@@ -1,0 +1,11 @@
+[
+  {
+    "name": "owner controls stay gated",
+    "steps": [
+      {
+        "send": { "text": "/stats-request" },
+        "expect": [{ "method": "sendMessage" }]
+      }
+    ]
+  }
+]

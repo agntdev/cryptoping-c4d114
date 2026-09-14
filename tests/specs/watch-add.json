@@ -7,7 +7,7 @@
           {
             "method": "sendMessage",
             "payload": {
-              "text": "Begin guided add-coin flow (seed buttons and free-text allowed)"
+              "text": "Choose a coin to watch, or type its ticker."
             }
           }
         ],

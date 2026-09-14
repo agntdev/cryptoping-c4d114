@@ -1,17 +1,14 @@
 import { Composer } from "grammy";
-
-// SCAFFOLD — generated from the bot blueprint BEFORE the agent runs.
-// Keep a LIVE registration (.command / .callbackQuery / …) so this feature is
-// never an empty stub. Replace the reply body with real logic + copy; if you
-// change the user-facing text, update tests/specs to match EXACTLY.
-// Do NOT rewrite src/bot.ts — buildBot() already auto-loads this module.
-// Menu: wire this into /start via registerMainMenuItem({ label: "Settings", data: "settings:open" }) if the toolkit exposes it.
-
-const composer = new Composer();
-
-composer.callbackQuery("settings:open", async (ctx) => {
-  await ctx.answerCallbackQuery();
-  await ctx.reply("Open user settings: timezone, quiet hours, morning summary time, default cooldown");
-});
-
+import type { Ctx } from "../bot.js";
+import { data, save } from "../domain.js";
+import { inlineButton, inlineKeyboard, registerMainMenuItem } from "../toolkit/index.js";
+registerMainMenuItem({ label: "Settings", data: "settings:open", order: 40 });
+const composer = new Composer<Ctx>();
+function view(ctx: Ctx) { const d = data(ctx); return `Settings\nTimezone: ${d.timezone}\nQuiet hours: ${d.quietStart && d.quietEnd ? `${d.quietStart}–${d.quietEnd}` : "Off"}\nMorning summary: ${d.morning ?? "Off"}\nDefault cooldown: ${Math.round(d.defaultCooldown / 3600)} hours`; }
+composer.callbackQuery("settings:open", async (ctx) => { await ctx.answerCallbackQuery(); await ctx.reply(view(ctx), { reply_markup: inlineKeyboard([[inlineButton("Set timezone", "settings:timezone"), inlineButton("Quiet hours", "settings:quiet")], [inlineButton("Morning summary", "settings:morning"), inlineButton("Default cooldown", "settings:cooldown")], [inlineButton("Back to menu", "menu:main")]]) }); });
+composer.callbackQuery("settings:timezone", async (ctx) => { await ctx.answerCallbackQuery(); ctx.session.flow = "settings-timezone"; await ctx.reply("Type an IANA timezone, such as Europe/Paris."); });
+composer.callbackQuery("settings:quiet", async (ctx) => { await ctx.answerCallbackQuery(); ctx.session.flow = "settings-quiet"; await ctx.reply("Type quiet hours as HH:MM-HH:MM, or type off."); });
+composer.callbackQuery("settings:morning", async (ctx) => { await ctx.answerCallbackQuery(); ctx.session.flow = "settings-morning"; await ctx.reply("Type a local time such as 08:00, or type off."); });
+composer.callbackQuery("settings:cooldown", async (ctx) => { await ctx.answerCallbackQuery(); ctx.session.flow = "settings-cooldown"; await ctx.reply("Type the default cooldown, such as 2h or 30m."); });
+composer.on("message:text", async (ctx, next) => { const flow = ctx.session.flow; if (!flow?.startsWith("settings-")) return next(); const d = data(ctx); const text = ctx.message.text.trim(); if (flow === "settings-timezone") { d.timezone = text; } else if (flow === "settings-quiet") { if (text.toLowerCase() === "off") { d.quietStart = undefined; d.quietEnd = undefined; } else { const m = text.match(/^(\d{2}:\d{2})-(\d{2}:\d{2})$/); if (!m) { await ctx.reply("Use HH:MM-HH:MM, such as 22:00-07:00."); return; } d.quietStart = m[1]; d.quietEnd = m[2]; } } else if (flow === "settings-morning") { d.morning = text.toLowerCase() === "off" ? undefined : text; } else { const m = text.match(/^(\d+)\s*(m|h)$/i); if (!m) { await ctx.reply("Use a duration such as 2h or 30m."); return; } d.defaultCooldown = Number(m[1]) * (m[2].toLowerCase() === "m" ? 60 : 3600); } save(ctx, d); ctx.session.flow = undefined; await ctx.reply("Settings updated.", { reply_markup: inlineKeyboard([[inlineButton("Open settings", "settings:open"), inlineButton("Back to menu", "menu:main")]]) }); });
 export default composer;

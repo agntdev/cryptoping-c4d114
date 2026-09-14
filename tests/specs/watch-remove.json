@@ -7,7 +7,7 @@
           {
             "method": "sendMessage",
             "payload": {
-              "text": "Select a coin from the user's watchlist to remove (inline options)"
+              "text": "Your watchlist is empty — tap Add coin to create one."
             }
           }
         ],

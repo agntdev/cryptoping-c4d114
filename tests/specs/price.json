@@ -7,7 +7,7 @@
           {
             "method": "sendMessage",
             "payload": {
-              "text": "On-demand price: /price [ticker?] returns current price for a single ticker or entire watchlist. No alerts auto-fired."
+              "text": "Your watchlist is empty — tap Add coin to create one."
             }
           }
         ],
