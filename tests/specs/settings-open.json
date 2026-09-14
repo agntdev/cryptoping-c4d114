@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Settings",
+    "steps": [
+      {
+        "expect": [
+          {
+            "method": "sendMessage",
+            "payload": {
+              "text": "Open user settings: timezone, quiet hours, morning summary time, default cooldown"
+            }
+          }
+        ],
+        "send": {
+          "callback": "settings:open"
+        }
+      }
+    ]
+  }
+]
