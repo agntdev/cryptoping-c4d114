@@ -7,7 +7,7 @@
           {
             "method": "sendMessage",
             "payload": {
-              "text": "Guided alert creation: choose coin -\u003e choose alert type -\u003e enter value -\u003e choose percent window/cooldown -\u003e confirm"
+              "text": "Add a coin first — alerts need a watchlist coin."
             }
           }
         ],

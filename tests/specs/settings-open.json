@@ -7,7 +7,7 @@
           {
             "method": "sendMessage",
             "payload": {
-              "text": "Open user settings: timezone, quiet hours, morning summary time, default cooldown"
+              "text": "Settings\nTimezone: UTC\nQuiet hours: Off\nMorning summary: Off\nDefault cooldown: 2 hours"
             }
           }
         ],

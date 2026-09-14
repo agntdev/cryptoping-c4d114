@@ -1,17 +1,27 @@
 import { Composer } from "grammy";
-
-// SCAFFOLD — generated from the bot blueprint BEFORE the agent runs.
-// Keep a LIVE registration (.command / .callbackQuery / …) so this feature is
-// never an empty stub. Replace the reply body with real logic + copy; if you
-// change the user-facing text, update tests/specs to match EXACTLY.
-// Do NOT rewrite src/bot.ts — buildBot() already auto-loads this module.
-// Menu: wire this into /start via registerMainMenuItem({ label: "Create alert", data: "alert:create:start" }) if the toolkit exposes it.
-
-const composer = new Composer();
-
-composer.callbackQuery("alert:create:start", async (ctx) => {
-  await ctx.answerCallbackQuery();
-  await ctx.reply("Guided alert creation: choose coin -\u003e choose alert type -\u003e enter value -\u003e choose percent window/cooldown -\u003e confirm");
+import type { Ctx } from "../bot.js";
+import { data, now, parseDuration, save, seedFor, watchFor } from "../domain.js";
+import { inlineButton, inlineKeyboard, registerMainMenuItem } from "../toolkit/index.js";
+registerMainMenuItem({ label: "Create alert", data: "alert:create:start", order: 20 });
+const composer = new Composer<Ctx>();
+const cancel = inlineKeyboard([[inlineButton("Cancel", "alert:cancel")]]);
+function coinKeyboard(ctx: Ctx) { return inlineKeyboard(data(ctx).watch.map((w) => [inlineButton(`${w.name} (${w.ticker})`, `alert:coin:${w.ticker}`)]).concat([[inlineButton("Type ticker", "alert:coin:type")]])); }
+function draft(ctx: Ctx) { const d = ctx.session.draft ?? {}; return `Alert draft\nCoin: ${d.ticker}\nType: ${d.type === "threshold" ? "Threshold" : "Percent change"}\nValue: ${d.value}${d.type === "percent" ? `% over ${d.window}` : " USD"}\nCooldown: ${d.cooldown}`; }
+composer.callbackQuery("alert:create:start", async (ctx) => { await ctx.answerCallbackQuery(); if (!data(ctx).watch.length) { await ctx.reply("Add a coin first — alerts need a watchlist coin.", { reply_markup: inlineKeyboard([[inlineButton("Add coin", "watch:add")]]) }); return; } ctx.session.flow = "alert-coin"; await ctx.reply("Choose a watchlist coin for this alert.", { reply_markup: coinKeyboard(ctx) }); });
+composer.callbackQuery(/^alert:coin:([A-Z]+)$/, async (ctx) => { await ctx.answerCallbackQuery(); ctx.session.draft = { ticker: ctx.match[1] }; ctx.session.flow = "alert-type"; await ctx.reply("What should trigger it?", { reply_markup: inlineKeyboard([[inlineButton("Price threshold", "alert:type:threshold"), inlineButton("Percent change", "alert:type:percent")], [inlineButton("Cancel", "alert:cancel")]]) }); });
+composer.callbackQuery("alert:coin:type", async (ctx) => { await ctx.answerCallbackQuery(); ctx.session.flow = "alert-coin-text"; await ctx.reply("Type a ticker from your watchlist, such as BTC.", { reply_markup: cancel }); });
+composer.callbackQuery(/^alert:type:(threshold|percent)$/, async (ctx) => { await ctx.answerCallbackQuery(); if (!ctx.session.draft) ctx.session.draft = {}; ctx.session.draft.type = ctx.match[1]; ctx.session.flow = ctx.match[1] === "threshold" ? "alert-value" : "alert-percent"; await ctx.reply(ctx.match[1] === "threshold" ? "Type the target price in USD, such as 60000." : "Type the percentage move, such as 5.", { reply_markup: cancel }); });
+composer.callbackQuery("alert:window:1h", async (ctx) => { await ctx.answerCallbackQuery(); if (ctx.session.draft) ctx.session.draft.window = "1h"; ctx.session.flow = "alert-cooldown"; await ctx.reply("Choose a cooldown before another alert can fire.", { reply_markup: inlineKeyboard([[inlineButton("1 hour", "alert:cooldown:1h"), inlineButton("Default 2 hours", "alert:cooldown:2h"), inlineButton("4 hours", "alert:cooldown:4h")], [inlineButton("Type duration", "alert:cooldown:type")]]) }); });
+composer.callbackQuery("alert:window:24h", async (ctx) => { await ctx.answerCallbackQuery(); if (ctx.session.draft) ctx.session.draft.window = "24h"; ctx.session.flow = "alert-cooldown"; await ctx.reply("Choose a cooldown before another alert can fire.", { reply_markup: inlineKeyboard([[inlineButton("1 hour", "alert:cooldown:1h"), inlineButton("Default 2 hours", "alert:cooldown:2h"), inlineButton("4 hours", "alert:cooldown:4h")], [inlineButton("Type duration", "alert:cooldown:type")]]) }); });
+composer.callbackQuery(/^alert:cooldown:(1h|2h|4h)$/, async (ctx) => { await ctx.answerCallbackQuery(); if (ctx.session.draft) ctx.session.draft.cooldown = ctx.match[1]; ctx.session.flow = "alert-confirm"; await ctx.reply(draft(ctx), { reply_markup: inlineKeyboard([[inlineButton("Confirm alert", "alert:confirm"), inlineButton("Cancel", "alert:cancel")]]) }); });
+composer.callbackQuery("alert:cooldown:type", async (ctx) => { await ctx.answerCallbackQuery(); ctx.session.flow = "alert-cooldown-text"; await ctx.reply("Type a duration, such as 30m, 2h, or 1d.", { reply_markup: cancel }); });
+composer.callbackQuery("alert:confirm", async (ctx) => { await ctx.answerCallbackQuery(); const d = data(ctx); const x = ctx.session.draft ?? {}; const seconds = parseDuration(String(x.cooldown ?? "2h")) ?? 7200; d.alerts.push({ id: `${ctx.from?.id ?? 0}-${now()}`, ticker: String(x.ticker), type: x.type as "threshold" | "percent", target: x.type === "threshold" ? Number(x.value) : undefined, percent: x.type === "percent" ? Number(x.value) : undefined, window: String(x.window ?? "1h"), cooldown: seconds, enabled: true }); save(ctx, d); ctx.session.flow = undefined; ctx.session.draft = undefined; await ctx.reply(`Alert created for ${x.ticker}. I'll notify you when its condition is met.`); });
+composer.callbackQuery("alert:cancel", async (ctx) => { await ctx.answerCallbackQuery(); ctx.session.flow = undefined; ctx.session.draft = undefined; await ctx.reply("Alert creation cancelled."); });
+composer.on("message:text", async (ctx, next) => {
+  const flow = ctx.session.flow; const text = ctx.message.text.trim();
+  if (flow === "alert-coin-text") { const c = seedFor(text); if (!c || !watchFor(data(ctx), c.ticker)) { await ctx.reply("That coin isn't on your watchlist. Choose a listed coin or type another ticker."); return; } ctx.session.draft = { ticker: c.ticker }; ctx.session.flow = "alert-type"; await ctx.reply("What should trigger it?", { reply_markup: inlineKeyboard([[inlineButton("Price threshold", "alert:type:threshold"), inlineButton("Percent change", "alert:type:percent")]]) }); return; }
+  if (flow === "alert-value" || flow === "alert-percent") { const n = Number(text); if (!Number.isFinite(n) || n <= 0) { await ctx.reply("Enter a number greater than zero."); return; } ctx.session.draft = { ...(ctx.session.draft ?? {}), value: n }; if (flow === "alert-percent") { ctx.session.flow = "alert-window"; await ctx.reply("Choose the comparison window.", { reply_markup: inlineKeyboard([[inlineButton("1 hour", "alert:window:1h"), inlineButton("24 hours", "alert:window:24h")]]) }); } else { ctx.session.flow = "alert-cooldown"; await ctx.reply("Choose a cooldown before another alert can fire.", { reply_markup: inlineKeyboard([[inlineButton("1 hour", "alert:cooldown:1h"), inlineButton("Default 2 hours", "alert:cooldown:2h"), inlineButton("4 hours", "alert:cooldown:4h")], [inlineButton("Type duration", "alert:cooldown:type")]]) }); } return; }
+  if (flow === "alert-cooldown-text") { const seconds = parseDuration(text); if (!seconds) { await ctx.reply("Use a duration such as 30m, 2h, or 1d."); return; } ctx.session.draft = { ...(ctx.session.draft ?? {}), cooldown: text }; ctx.session.flow = "alert-confirm"; await ctx.reply(draft(ctx), { reply_markup: inlineKeyboard([[inlineButton("Confirm alert", "alert:confirm"), inlineButton("Cancel", "alert:cancel")]]) }); return; }
+  return next();
 });
-
 export default composer;
