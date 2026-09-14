@@ -1,0 +1,11 @@
+[
+  {
+    "name": "owner stats request is handled",
+    "steps": [
+      {
+        "send": { "text": "/stats-request" },
+        "expect": [{ "method": "sendMessage" }]
+      }
+    ]
+  }
+]
