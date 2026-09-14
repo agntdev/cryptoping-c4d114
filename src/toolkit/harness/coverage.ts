@@ -18,10 +18,12 @@ import type { BotSpec, SendShorthand, SpecStep } from "./types.js";
 
 /** A leading "/command" extracted from a send step, WITHOUT the slash and any
  *  @botusername suffix or arguments. Case preserved. Returns null for a non-
- *  command text, a callback, or a raw-update send. */
+ *  command text, a callback, or a raw-update send. Legacy blueprint command
+ *  spellings with hyphens remain visible to coverage instead of being dropped.
+ */
 function commandOfSend(send: SendShorthand): string | null {
   if (!("text" in send) || typeof send.text !== "string") return null;
-  const m = /^\/([A-Za-z0-9_]+)(?:@[A-Za-z0-9_]+)?/.exec(send.text.trim());
+  const m = /^\/([A-Za-z0-9_-]+)(?:@[A-Za-z0-9_]+)?/.exec(send.text.trim());
   return m ? m[1]! : null;
 }
 
